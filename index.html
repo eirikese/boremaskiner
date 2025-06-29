@@ -1,9 +1,21 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>Topo Notes Map</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+
+  <!-- Fullscreen support on iOS when added to home screen -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Topo Notes Map" />
+
+  <!-- Manifest to enable standalone PWA behavior -->
+  <link rel="manifest" href="data:application/json,{%22name%22:%22Topo%20Notes%20Map%22,%22short_name%22:%22TopoMap%22,%22start_url%22:%22.%2Findex.html%22,%22display%22:%22standalone%22,%22background_color%22:%22%23ffffff%22,%22theme_color%22:%22%23ffffff%22}" />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
   <style>
     html, body {
       height: 100%;
@@ -33,7 +45,6 @@
       margin-right: 5px;
     }
   </style>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
   <div class="map-buttons">
@@ -42,6 +53,7 @@
   </div>
   <div id="map"></div>
 
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const map = L.map('map').setView([20, 0], 2);
@@ -79,12 +91,12 @@
       clearTimeout(pressTimer);
     }
 
-    // Mouse (desktop)
+    // Desktop
     map.on('mousedown', e => startPress(e.latlng));
     map.on('mouseup', cancelPress);
     map.on('mouseout', cancelPress);
 
-    // Touch (mobile)
+    // Mobile
     map.on('touchstart', e => {
       if (e.latlng) startPress(e.latlng);
       else if (e.originalEvent.touches.length === 1) {
@@ -115,12 +127,6 @@
       });
       alert('Markers loaded!');
     }
-
-    // Optional: Auto-fullscreen on load (some browsers may block it)
-    document.addEventListener('click', () => {
-      const el = document.documentElement;
-      if (el.requestFullscreen) el.requestFullscreen();
-    }, { once: true });
   </script>
 </body>
 </html>
