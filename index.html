@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Topo Notes Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+    }
+    .map-buttons {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 8px;
+      border-radius: 5px;
+    }
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+  <div class="map-buttons">
+    <button onclick="saveMarkers()">💾 Save Local</button>
+    <button onclick="loadMarkers()">📂 Load Local</button>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([20, 0], 2); // Default view
+
+    L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      maxZoom: 17,
+      attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> contributors'
+    }).addTo(map);
+
+    let longPressTimeout;
+    let markers = [];
+
+    map.on('mousedown', function (e) {
+      longPressTimeout = setTimeout(() => {
+        const note = prompt("Enter a note for this point:");
+        if (note !== null) {
+          const marker = L.circleMarker(e.latlng, {
+            radius: 8,
+            color: 'red',
+            fillColor: '#f03',
+            fillOpacity: 0.5
+          }).addTo(map);
+          marker.bindPopup(note).openPopup();
+          markers.push({ lat: e.latlng.lat, lng: e.latlng.lng, note });
+        }
+      }, 1000); // 1-second hold
+    });
+
+    map.on('mouseup', () => clearTimeout(longPressTimeout));
+    map.on('mouseout', () => clearTimeout(longPressTimeout));
+
+    function saveMarkers() {
+      localStorage.setItem('topoNotes', JSON.stringify(markers));
+      alert('Markers saved locally!');
+    }
+
+    function loadMarkers() {
+      const saved = JSON.parse(localStorage.getItem('topoNotes') || '[]');
+      saved.forEach(data => {
+        const marker = L.circleMarker([data.lat, data.lng], {
+          radius: 8,
+          color: 'red',
+          fillColor: '#f03',
+          fillOpacity: 0.5
+        }).addTo(map);
+        marker.bindPopup(data.note);
+        markers.push(data);
+      });
+      alert('Markers loaded!');
+    }
+  </script>
+</body>
+</html>
