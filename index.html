@@ -2,15 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Topo Notes Map</title>
+  <title>Climbing Logger</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-
-  <!-- Fullscreen on iPhone when added to homescreen -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Topo Notes Map" />
-  <link rel="manifest" href="data:application/json,{%22name%22:%22Topo%20Notes%20Map%22,%22short_name%22:%22TopoMap%22,%22start_url%22:%22.%2Findex.html%22,%22display%22:%22standalone%22}" />
-
+  <meta name="apple-mobile-web-app-title" content="Climbing Logger" />
+  <link rel="manifest" href="data:application/json,{%22name%22:%22Climbing%20Logger%22,%22short_name%22:%22Logger%22,%22start_url%22:%22index.html%22,%22display%22:%22standalone%22}" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body {
@@ -35,12 +32,9 @@
       font-family: sans-serif;
     }
     .map-buttons button,
-    .map-buttons input[type="file"],
-    .map-buttons input[type="color"] {
+    .map-buttons input,
+    .map-buttons select {
       margin: 4px 2px;
-    }
-    .popup-note {
-      margin-bottom: 6px;
     }
     .popup-remove-btn {
       background: #f33;
@@ -55,10 +49,14 @@
 </head>
 <body>
   <div class="map-buttons">
-    <button onclick="saveMarkers()">💾 Save</button>
-    <button onclick="downloadMarkers()">⬇ Export</button>
-    <input type="file" accept="application/json" onchange="importMarkers(event)" />
-    <input type="color" id="colorPicker" title="Pick marker color" value="#f03" />
+    <button onclick="saveAll()">💾 Save</button>
+    <button onclick="downloadAll()">⬇ Export</button>
+    <input type="file" accept="application/json" onchange="importAll(event)" />
+    <input type="color" id="colorPicker" title="Pick point color" value="#f03" />
+    <select id="cragMenu" onchange="handleCragMenu(this.value)">
+      <option value="">🧗 Crag Menu</option>
+      <option value="draw">Draw Crag</option>
+    </select>
   </div>
   <div id="map"></div>
 
@@ -76,6 +74,14 @@
     let markerRefs = {};
     let clickTimes = [];
 
+    // Crags
+    let drawingCrag = false;
+    let currentCragPoints = [];
+    let cragLayers = [];
+    let cragRoutes = {}; // cragName -> [routes]
+    let cragNameToLayer = {};
+
+    // ============ POINT MARKERS ============
     function generateId(lat, lng, note) {
       return `id-${lat.toFixed(5)}-${lng.toFixed(5)}-${note.slice(0, 10).replace(/\W+/g, '')}`;
     }
@@ -90,10 +96,9 @@
       }).addTo(map);
 
       const popup = `
-        <div class="popup-note">${note}</div>
-        <button class="popup-remove-btn" onclick="removeMarker('${id}')">🗑 Remove Point</button>
+        <div>${note}</div>
+        <button class="popup-remove-btn" onclick="removeMarker('${id}')">🗑 Remove</button>
       `;
-
       marker.bindPopup(popup);
       markerRefs[id] = marker;
       markers.push({ lat: latlng.lat, lng: latlng.lng, note, color });
@@ -108,64 +113,171 @@
       }
     }
 
-    // Expose for popup button
     window.removeMarker = removeMarker;
 
     map.on('click', e => {
+      if (drawingCrag) {
+        currentCragPoints.push(e.latlng);
+        L.circleMarker(e.latlng, { radius: 5, color: 'blue', fillColor: 'blue', fillOpacity: 0.7 }).addTo(map);
+        return;
+      }
+
       const now = Date.now();
       clickTimes.push(now);
       clickTimes = clickTimes.filter(t => now - t < 1500);
-
       if (clickTimes.length >= 3) {
         clickTimes = [];
-
-        const note = prompt("Enter a note for this point:");
-        if (note && note.trim() !== "") {
+        const note = prompt("Enter note:");
+        if (note) {
           const color = colorPicker.value || "#f03";
           addMarker(e.latlng, note.trim(), color);
         }
       }
     });
 
-    function saveMarkers() {
-      localStorage.setItem('topoNotes', JSON.stringify(markers));
-      alert("Saved locally!");
+    // ============ CRAGS ============
+
+    function handleCragMenu(value) {
+      if (value === 'draw') {
+        startCragDrawing();
+        document.getElementById('cragMenu').value = '';
+      }
     }
 
-    function downloadMarkers() {
-      const blob = new Blob([JSON.stringify(markers, null, 2)], { type: "application/json" });
+    function startCragDrawing() {
+      drawingCrag = true;
+      currentCragPoints = [];
+      alert("Tap points to draw crag. Press Enter to finish.");
+    }
+
+    document.addEventListener('keydown', e => {
+      if (drawingCrag && e.key === 'Enter') {
+        finishCragDrawing();
+      }
+    });
+
+    function finishCragDrawing() {
+      if (currentCragPoints.length < 2) {
+        alert("Need at least 2 points.");
+        return;
+      }
+      const name = prompt("Name this crag:");
+      if (!name) return;
+
+      const poly = L.polyline(currentCragPoints, { color: 'brown' }).addTo(map);
+      poly.bindPopup(`
+        <b>${name}</b><br/>
+        <button onclick="showRoutes('${name}')">🧗 Show Routes</button><br/>
+        <button onclick="addRouteToCrag('${name}')">➕ Add Route</button>
+      `);
+      cragRoutes[name] = [];
+      cragNameToLayer[name] = poly;
+      cragLayers.push(poly);
+      drawingCrag = false;
+      currentCragPoints = [];
+    }
+
+    function showRoutes(cragName) {
+      const routes = cragRoutes[cragName] || [];
+      if (routes.length === 0) {
+        alert("No routes yet.");
+        return;
+      }
+      let list = '';
+      routes.forEach((r, i) => {
+        list += `${i + 1}. ${r.name} (${r.grade}) ${'⭐'.repeat(r.stars)}\n"${r.comment}"\n[Edit] [Delete]\n\n`;
+      });
+      const action = prompt(`${list}\nEnter number to Edit/Delete, or Cancel:`);
+      if (!action) return;
+      const index = parseInt(action) - 1;
+      if (isNaN(index) || index < 0 || index >= routes.length) return;
+
+      const choice = prompt("Type 'edit' or 'delete':");
+      if (choice === 'delete') {
+        routes.splice(index, 1);
+        alert("Route deleted.");
+      } else if (choice === 'edit') {
+        const r = routes[index];
+        r.name = prompt("New name:", r.name) || r.name;
+        r.grade = prompt("New grade:", r.grade) || r.grade;
+        r.stars = parseInt(prompt("Stars (1–3):", r.stars), 10) || r.stars;
+        r.comment = prompt("New comment:", r.comment) || r.comment;
+        alert("Route updated.");
+      }
+    }
+
+    function addRouteToCrag(cragName) {
+      const name = prompt("Route name:");
+      if (!name) return;
+      const grade = prompt("Grade:");
+      const stars = parseInt(prompt("Stars (1–3):"), 10);
+      const comment = prompt("Comment:");
+      cragRoutes[cragName].push({ name, grade, stars, comment });
+      alert("Route added.");
+    }
+
+    // ============ SAVE / LOAD / EXPORT ============
+
+    function saveAll() {
+      const data = {
+        markers,
+        cragRoutes,
+        cragLines: cragLayers.map(l => ({
+          name: l.cragName || l.getPopup().getContent().split('<')[0].replace('<b>', '').trim(),
+          latlngs: l.getLatLngs()
+        }))
+      };
+      localStorage.setItem('climbLogger', JSON.stringify(data));
+      alert("Saved.");
+    }
+
+    function downloadAll() {
+      const blob = new Blob([localStorage.getItem('climbLogger')], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'topo_notes.json';
+      a.download = 'climbing_logger.json';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }
 
-    function importMarkers(event) {
+    function importAll(event) {
       const file = event.target.files[0];
       if (!file) return;
-
       const reader = new FileReader();
       reader.onload = e => {
         try {
           const data = JSON.parse(e.target.result);
-          if (!Array.isArray(data)) throw new Error("Invalid file format.");
-          data.forEach(entry => addMarker({ lat: entry.lat, lng: entry.lng }, entry.note, entry.color || "#f03"));
-          alert("Imported successfully.");
+          markers = [];
+          cragLayers.forEach(l => map.removeLayer(l));
+          cragLayers = [];
+          cragRoutes = data.cragRoutes || {};
+          data.markers.forEach(m => addMarker({ lat: m.lat, lng: m.lng }, m.note, m.color));
+          data.cragLines.forEach(c => {
+            const poly = L.polyline(c.latlngs, { color: 'brown' }).addTo(map);
+            poly.bindPopup(`
+              <b>${c.name}</b><br/>
+              <button onclick="showRoutes('${c.name}')">🧗 Show Routes</button><br/>
+              <button onclick="addRouteToCrag('${c.name}')">➕ Add Route</button>
+            `);
+            cragNameToLayer[c.name] = poly;
+            cragLayers.push(poly);
+          });
+          alert("Imported.");
         } catch (err) {
-          alert("Error: " + err.message);
+          alert("Error loading: " + err.message);
         }
       };
       reader.readAsText(file);
     }
 
-    // Load saved markers on startup
     window.onload = () => {
-      const saved = JSON.parse(localStorage.getItem('topoNotes') || '[]');
-      saved.forEach(entry => addMarker({ lat: entry.lat, lng: entry.lng }, entry.note, entry.color || "#f03"));
+      const saved = localStorage.getItem('climbLogger');
+      if (saved) {
+        importAll({ target: { files: [new Blob([saved], { type: 'application/json' })] } });
+      }
     };
   </script>
 </body>
