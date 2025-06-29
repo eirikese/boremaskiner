@@ -3,20 +3,34 @@
 <head>
   <meta charset="utf-8" />
   <title>Topo Notes Map</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <style>
-    html, body, #map {
+    html, body {
       height: 100%;
       margin: 0;
+      overflow: hidden;
+      touch-action: none;
+      user-select: none;
+    }
+    #map {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
     }
     .map-buttons {
       position: absolute;
       top: 10px;
       left: 10px;
       z-index: 1000;
-      background: white;
+      background: rgba(255, 255, 255, 0.9);
       padding: 8px;
       border-radius: 5px;
+      font-family: sans-serif;
+    }
+    button {
+      margin-right: 5px;
     }
   </style>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -30,34 +44,57 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map').setView([20, 0], 2); // Default view
+    const map = L.map('map').setView([20, 0], 2);
 
     L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
       maxZoom: 17,
       attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> contributors'
     }).addTo(map);
 
-    let longPressTimeout;
     let markers = [];
+    let pressTimer = null;
+    let pressLatLng = null;
 
-    map.on('mousedown', function (e) {
-      longPressTimeout = setTimeout(() => {
-        const note = prompt("Enter a note for this point:");
-        if (note !== null) {
-          const marker = L.circleMarker(e.latlng, {
-            radius: 8,
-            color: 'red',
-            fillColor: '#f03',
-            fillOpacity: 0.5
-          }).addTo(map);
-          marker.bindPopup(note).openPopup();
-          markers.push({ lat: e.latlng.lat, lng: e.latlng.lng, note });
-        }
-      }, 1000); // 1-second hold
+    function onLongPress(latlng) {
+      const note = prompt("Enter a note for this point:");
+      if (note !== null && note.trim() !== "") {
+        const marker = L.circleMarker(latlng, {
+          radius: 8,
+          color: 'red',
+          fillColor: '#f03',
+          fillOpacity: 0.5
+        }).addTo(map);
+        marker.bindPopup(note).openPopup();
+        markers.push({ lat: latlng.lat, lng: latlng.lng, note });
+      }
+    }
+
+    function startPress(latlng) {
+      clearTimeout(pressTimer);
+      pressLatLng = latlng;
+      pressTimer = setTimeout(() => onLongPress(pressLatLng), 800);
+    }
+
+    function cancelPress() {
+      clearTimeout(pressTimer);
+    }
+
+    // Mouse (desktop)
+    map.on('mousedown', e => startPress(e.latlng));
+    map.on('mouseup', cancelPress);
+    map.on('mouseout', cancelPress);
+
+    // Touch (mobile)
+    map.on('touchstart', e => {
+      if (e.latlng) startPress(e.latlng);
+      else if (e.originalEvent.touches.length === 1) {
+        const touch = e.originalEvent.touches[0];
+        const point = map.containerPointToLatLng(map.mouseEventToContainerPoint(touch));
+        startPress(point);
+      }
     });
-
-    map.on('mouseup', () => clearTimeout(longPressTimeout));
-    map.on('mouseout', () => clearTimeout(longPressTimeout));
+    map.on('touchend', cancelPress);
+    map.on('touchcancel', cancelPress);
 
     function saveMarkers() {
       localStorage.setItem('topoNotes', JSON.stringify(markers));
@@ -78,6 +115,12 @@
       });
       alert('Markers loaded!');
     }
+
+    // Optional: Auto-fullscreen on load (some browsers may block it)
+    document.addEventListener('click', () => {
+      const el = document.documentElement;
+      if (el.requestFullscreen) el.requestFullscreen();
+    }, { once: true });
   </script>
 </body>
 </html>
