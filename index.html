@@ -1,33 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
   <title>Topo Notes Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 
-  <!-- Fullscreen on iPhone -->
+  <!-- Fullscreen on iPhone when added to homescreen -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Topo Notes Map" />
+  <link rel="manifest" href="data:application/json,{%22name%22:%22Topo%20Notes%20Map%22,%22short_name%22:%22TopoMap%22,%22start_url%22:%22.%2Findex.html%22,%22display%22:%22standalone%22}" />
 
-  <!-- Embedded PWA manifest -->
-  <link rel="manifest" href="data:application/json,{%22name%22:%22Topo%20Notes%20Map%22,%22short_name%22:%22TopoMap%22,%22start_url%22:%22.%2Findex.html%22,%22display%22:%22standalone%22,%22background_color%22:%22%23ffffff%22,%22theme_color%22:%22%23ffffff%22}" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
   <style>
     html, body {
       height: 100%;
       margin: 0;
       overflow: hidden;
-      user-select: none;
       touch-action: manipulation;
+      user-select: none;
     }
     #map {
-      width: 100vw;
       height: 100vh;
-      position: absolute;
-      top: 0;
-      left: 0;
+      width: 100vw;
     }
     .map-buttons {
       position: absolute;
@@ -42,20 +37,19 @@
     .map-buttons button,
     .map-buttons input[type="file"],
     .map-buttons input[type="color"] {
-      margin: 4px;
+      margin: 4px 2px;
     }
     .popup-note {
       margin-bottom: 6px;
     }
     .popup-remove-btn {
-      display: inline-block;
       background: #f33;
       color: white;
       padding: 4px 8px;
       border: none;
       border-radius: 4px;
-      cursor: pointer;
       font-size: 12px;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -79,43 +73,43 @@
 
     const colorPicker = document.getElementById('colorPicker');
     let markers = [];
+    let markerRefs = {};
     let clickTimes = [];
 
-    function createPopupContent(note, latlng, markerRef) {
-      const id = `remove-${latlng.lat}-${latlng.lng}`.replace(/[^\w-]/g, '');
-      return `
-        <div class="popup-note">${note}</div>
-        <button class="popup-remove-btn" onclick="removeMarker('${id}')">🗑 Remove Point</button>
-        <script>
-          window.removeMarker = function(id) {
-            const markerEntry = markerRefs[id];
-            if (markerEntry) {
-              map.removeLayer(markerEntry.marker);
-              markers = markers.filter(m => !(m.lat === markerEntry.lat && m.lng === markerEntry.lng && m.note === markerEntry.note));
-              delete markerRefs[id];
-            }
-          };
-        </script>
-      `;
+    function generateId(lat, lng, note) {
+      return `id-${lat.toFixed(5)}-${lng.toFixed(5)}-${note.slice(0, 10).replace(/\W+/g, '')}`;
     }
 
-    const markerRefs = {}; // Store references for deletion
-
     function addMarker(latlng, note, color) {
+      const id = generateId(latlng.lat, latlng.lng, note);
       const marker = L.circleMarker(latlng, {
         radius: 8,
-        color: color,
+        color,
         fillColor: color,
         fillOpacity: 0.5
       }).addTo(map);
 
-      const id = `remove-${latlng.lat}-${latlng.lng}`.replace(/[^\w-]/g, '');
-      const popupContent = createPopupContent(note, latlng, marker);
-      marker.bindPopup(popupContent);
+      const popup = `
+        <div class="popup-note">${note}</div>
+        <button class="popup-remove-btn" onclick="removeMarker('${id}')">🗑 Remove Point</button>
+      `;
 
-      markerRefs[id] = { marker, lat: latlng.lat, lng: latlng.lng, note };
+      marker.bindPopup(popup);
+      markerRefs[id] = marker;
       markers.push({ lat: latlng.lat, lng: latlng.lng, note, color });
     }
+
+    function removeMarker(id) {
+      const marker = markerRefs[id];
+      if (marker) {
+        map.removeLayer(marker);
+        delete markerRefs[id];
+        markers = markers.filter(m => generateId(m.lat, m.lng, m.note) !== id);
+      }
+    }
+
+    // Expose for popup button
+    window.removeMarker = removeMarker;
 
     map.on('click', e => {
       const now = Date.now();
@@ -124,10 +118,11 @@
 
       if (clickTimes.length >= 3) {
         clickTimes = [];
+
         const note = prompt("Enter a note for this point:");
-        if (note !== null && note.trim() !== "") {
+        if (note && note.trim() !== "") {
           const color = colorPicker.value || "#f03";
-          addMarker(e.latlng, note, color);
+          addMarker(e.latlng, note.trim(), color);
         }
       }
     });
@@ -152,21 +147,22 @@
     function importMarkers(event) {
       const file = event.target.files[0];
       if (!file) return;
+
       const reader = new FileReader();
-      reader.onload = function(e) {
+      reader.onload = e => {
         try {
           const data = JSON.parse(e.target.result);
-          if (!Array.isArray(data)) throw new Error("Invalid file");
+          if (!Array.isArray(data)) throw new Error("Invalid file format.");
           data.forEach(entry => addMarker({ lat: entry.lat, lng: entry.lng }, entry.note, entry.color || "#f03"));
-          alert("Imported successfully!");
+          alert("Imported successfully.");
         } catch (err) {
-          alert("Error importing: " + err.message);
+          alert("Error: " + err.message);
         }
       };
       reader.readAsText(file);
     }
 
-    // Load from localStorage
+    // Load saved markers on startup
     window.onload = () => {
       const saved = JSON.parse(localStorage.getItem('topoNotes') || '[]');
       saved.forEach(entry => addMarker({ lat: entry.lat, lng: entry.lng }, entry.note, entry.color || "#f03"));
