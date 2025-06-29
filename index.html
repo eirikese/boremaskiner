@@ -5,24 +5,22 @@
   <title>Topo Notes Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 
-  <!-- Fullscreen support on iOS when added to home screen -->
+  <!-- Fullscreen on iPhone when added to home screen -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Topo Notes Map" />
 
-  <!-- Manifest to enable standalone PWA behavior -->
+  <!-- Embedded manifest -->
   <link rel="manifest" href="data:application/json,{%22name%22:%22Topo%20Notes%20Map%22,%22short_name%22:%22TopoMap%22,%22start_url%22:%22.%2Findex.html%22,%22display%22:%22standalone%22,%22background_color%22:%22%23ffffff%22,%22theme_color%22:%22%23ffffff%22}" />
 
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
   <style>
     html, body {
       height: 100%;
       margin: 0;
       overflow: hidden;
-      touch-action: none;
       user-select: none;
+      touch-action: manipulation;
     }
     #map {
       width: 100vw;
@@ -41,19 +39,19 @@
       border-radius: 5px;
       font-family: sans-serif;
     }
-    button {
-      margin-right: 5px;
+    .map-buttons button, .map-buttons input {
+      margin: 4px;
     }
   </style>
 </head>
 <body>
   <div class="map-buttons">
-    <button onclick="saveMarkers()">💾 Save Local</button>
-    <button onclick="loadMarkers()">📂 Load Local</button>
+    <button onclick="saveMarkers()">💾 Save</button>
+    <button onclick="downloadMarkers()">⬇ Export</button>
+    <input type="file" accept="application/json" onchange="importMarkers(event)" />
   </div>
   <div id="map"></div>
 
-  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const map = L.map('map').setView([20, 0], 2);
@@ -64,56 +62,77 @@
     }).addTo(map);
 
     let markers = [];
-    let pressTimer = null;
-    let pressLatLng = null;
+    let clickTimes = [];
 
-    function onLongPress(latlng) {
-      const note = prompt("Enter a note for this point:");
-      if (note !== null && note.trim() !== "") {
-        const marker = L.circleMarker(latlng, {
-          radius: 8,
-          color: 'red',
-          fillColor: '#f03',
-          fillOpacity: 0.5
-        }).addTo(map);
-        marker.bindPopup(note).openPopup();
-        markers.push({ lat: latlng.lat, lng: latlng.lng, note });
-      }
-    }
+    map.on('click', e => {
+      const now = Date.now();
+      clickTimes.push(now);
 
-    function startPress(latlng) {
-      clearTimeout(pressTimer);
-      pressLatLng = latlng;
-      pressTimer = setTimeout(() => onLongPress(pressLatLng), 800);
-    }
+      // Keep only last 3 clicks within 1.5 seconds
+      clickTimes = clickTimes.filter(t => now - t < 1500);
 
-    function cancelPress() {
-      clearTimeout(pressTimer);
-    }
-
-    // Desktop
-    map.on('mousedown', e => startPress(e.latlng));
-    map.on('mouseup', cancelPress);
-    map.on('mouseout', cancelPress);
-
-    // Mobile
-    map.on('touchstart', e => {
-      if (e.latlng) startPress(e.latlng);
-      else if (e.originalEvent.touches.length === 1) {
-        const touch = e.originalEvent.touches[0];
-        const point = map.containerPointToLatLng(map.mouseEventToContainerPoint(touch));
-        startPress(point);
+      if (clickTimes.length >= 3) {
+        clickTimes = []; // reset
+        const note = prompt("Enter a note for this point:");
+        if (note !== null && note.trim() !== "") {
+          const marker = L.circleMarker(e.latlng, {
+            radius: 8,
+            color: 'red',
+            fillColor: '#f03',
+            fillOpacity: 0.5
+          }).addTo(map);
+          marker.bindPopup(note).openPopup();
+          markers.push({ lat: e.latlng.lat, lng: e.latlng.lng, note });
+        }
       }
     });
-    map.on('touchend', cancelPress);
-    map.on('touchcancel', cancelPress);
 
     function saveMarkers() {
       localStorage.setItem('topoNotes', JSON.stringify(markers));
-      alert('Markers saved locally!');
+      alert("Saved locally!");
     }
 
-    function loadMarkers() {
+    function downloadMarkers() {
+      const blob = new Blob([JSON.stringify(markers, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'topo_notes.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function importMarkers(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (!Array.isArray(data)) throw new Error("Invalid file");
+
+          data.forEach(entry => {
+            const marker = L.circleMarker([entry.lat, entry.lng], {
+              radius: 8,
+              color: 'red',
+              fillColor: '#f03',
+              fillOpacity: 0.5
+            }).addTo(map);
+            marker.bindPopup(entry.note);
+            markers.push(entry);
+          });
+          alert("Imported successfully!");
+        } catch (err) {
+          alert("Error importing: " + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // Optional: load previous session
+    window.onload = () => {
       const saved = JSON.parse(localStorage.getItem('topoNotes') || '[]');
       saved.forEach(data => {
         const marker = L.circleMarker([data.lat, data.lng], {
@@ -125,8 +144,7 @@
         marker.bindPopup(data.note);
         markers.push(data);
       });
-      alert('Markers loaded!');
-    }
+    };
   </script>
 </body>
 </html>
