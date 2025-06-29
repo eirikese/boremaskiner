@@ -74,14 +74,12 @@
     let markerRefs = {};
     let clickTimes = [];
 
-    // Crags
     let drawingCrag = false;
     let currentCragPoints = [];
     let cragLayers = [];
-    let cragRoutes = {}; // cragName -> [routes]
+    let cragRoutes = {};
     let cragNameToLayer = {};
 
-    // ============ POINT MARKERS ============
     function generateId(lat, lng, note) {
       return `id-${lat.toFixed(5)}-${lng.toFixed(5)}-${note.slice(0, 10).replace(/\W+/g, '')}`;
     }
@@ -135,8 +133,6 @@
       }
     });
 
-    // ============ CRAGS ============
-
     function handleCragMenu(value) {
       if (value === 'draw') {
         startCragDrawing();
@@ -147,14 +143,22 @@
     function startCragDrawing() {
       drawingCrag = true;
       currentCragPoints = [];
-      alert("Tap points to draw crag. Press Enter to finish.");
+      showFinishButton(true);
+      alert("Tap to add crag points. Tap '✅ Finish Crag' when done.");
     }
 
-    document.addEventListener('keydown', e => {
-      if (drawingCrag && e.key === 'Enter') {
-        finishCragDrawing();
+    function showFinishButton(show) {
+      const existing = document.getElementById('finishCragBtn');
+      if (show && !existing) {
+        const btn = document.createElement('button');
+        btn.id = 'finishCragBtn';
+        btn.textContent = '✅ Finish Crag';
+        btn.onclick = finishCragDrawing;
+        document.querySelector('.map-buttons').appendChild(btn);
+      } else if (!show && existing) {
+        existing.remove();
       }
-    });
+    }
 
     function finishCragDrawing() {
       if (currentCragPoints.length < 2) {
@@ -175,6 +179,7 @@
       cragLayers.push(poly);
       drawingCrag = false;
       currentCragPoints = [];
+      showFinishButton(false);
     }
 
     function showRoutes(cragName) {
@@ -216,8 +221,6 @@
       alert("Route added.");
     }
 
-    // ============ SAVE / LOAD / EXPORT ============
-
     function saveAll() {
       const data = {
         markers,
@@ -251,6 +254,8 @@
         try {
           const data = JSON.parse(e.target.result);
           markers = [];
+          Object.values(markerRefs).forEach(m => map.removeLayer(m));
+          markerRefs = {};
           cragLayers.forEach(l => map.removeLayer(l));
           cragLayers = [];
           cragRoutes = data.cragRoutes || {};
@@ -276,7 +281,9 @@
     window.onload = () => {
       const saved = localStorage.getItem('climbLogger');
       if (saved) {
-        importAll({ target: { files: [new Blob([saved], { type: 'application/json' })] } });
+        const blob = new Blob([saved], { type: 'application/json' });
+        const file = new File([blob], "climbLogger.json");
+        importAll({ target: { files: [file] } });
       }
     };
   </script>
