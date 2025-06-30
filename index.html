@@ -3,13 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <title>Climbing Logger</title>
-  <!-- iOS Fullscreen -->
+
+  <!-- Fullscreen iOS support -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0,user-scalable=no,viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Climbing Logger">
   <link rel="apple-touch-icon" href="icon.png">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body {
       height: 100%; margin: 0; background: #fff;
@@ -37,7 +39,7 @@
       font-weight: bold; margin-right: 10px;
     }
     .top-menu button {
-      margin: 0 8px;
+      margin: 0 6px;
     }
     .map-buttons {
       position: absolute;
@@ -57,7 +59,9 @@
     <button onclick="editSelected()">✏️ Edit</button>
     <button onclick="removeSelected()">🗑 Remove</button>
     <button id="addRouteBtn" onclick="prepareAddRoute()" style="display:none">➕ Add Route</button>
+    <button id="trackBtn" onclick="toggleTrack()">📡 Track Me</button>
   </div>
+
   <div class="map-buttons">
     <select onchange="handleMenu(this.value)">
       <option value="">🧰 Menu</option>
@@ -70,102 +74,91 @@
     <input type="file" id="importFile" accept="application/json" style="display:none" onchange="doImport(event)">
     <input type="color" id="colorPicker" title="Pick route color" value="#f03">
   </div>
+
   <div id="map"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const map = L.map('map', { zoomControl: false }).setView([20, 0], 2);
-    L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-      maxZoom: 17, attribution: '&copy; OpenTopoMap'
-    }).addTo(map);
+    L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'&copy; OpenTopoMap'}).addTo(map);
 
     let drawingCrag = false, tempPts = [];
     let crags = [], cragRoutes = {}, routeMarkers = {};
     let selectedCrag = null, selectedRoute = null, addRouteMode = false;
-    let cragLayers = {}; // store both visible and tap lines by crag name
+    let cragLayers = {};
 
-    const ctxMenu = document.getElementById('contextMenu');
-    const titleEl = document.getElementById('selectedTitle');
-    const addRouteBtn = document.getElementById('addRouteBtn');
+    let tracking = false, trackMarker = null, trackWatchId = null;
+
+    const ctxMenu = document.getElementById('contextMenu'),
+          titleEl = document.getElementById('selectedTitle'),
+          addRouteBtn = document.getElementById('addRouteBtn'),
+          trackBtn = document.getElementById('trackBtn');
 
     function handleMenu(val) {
-      if (val === 'drawCrag') startCrag();
-      else if (val === 'save') localStorage.setItem('climbLog', JSON.stringify({ crags, cragRoutes }));
-      else if (val === 'load') load();
-      else if (val === 'export') {
-        const blob = new Blob([JSON.stringify({ crags, cragRoutes })], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = 'climbing_logger.json'; a.click();
-      }
-      else if (val === 'import') document.getElementById('importFile').click();
-      event.target.value = '';
+      if (val==='drawCrag') startCrag();
+      else if (val==='save') localStorage.setItem('climbLog',JSON.stringify({crags,cragRoutes}));
+      else if (val==='load') load();
+      else if (val==='export') download(JSON.stringify({crags,cragRoutes}),'climbing_logger.json');
+      else if (val==='import') document.getElementById('importFile').click();
+      event.target.value='';
     }
 
-    function startCrag() {
-      drawingCrag = true; tempPts = []; showFinishButton(true);
+    function startCrag(){
+      drawingCrag=true; tempPts=[]; showFinishButton(true);
       alert("Tap to draw crag, then press Finish.");
     }
 
-    function showFinishButton(show) {
-      const existing = document.getElementById('finishCragBtn');
-      if (show && !existing) {
-        const btn = document.createElement('button');
-        btn.id = 'finishCragBtn'; btn.textContent = '✅ Finish Crag';
-        btn.onclick = finishCrag;
-        document.querySelector('.map-buttons').appendChild(btn);
-      } else if (!show && existing) existing.remove();
+    function showFinishButton(show){
+      const existing=document.getElementById('finishCragBtn');
+      if(show&&!existing){
+        const btn=document.createElement('button');
+        btn.id='finishCragBtn'; btn.textContent='✅ Finish Crag';
+        btn.onclick=finishCrag; document.querySelector('.map-buttons').appendChild(btn);
+      }else if(!show&&existing) existing.remove();
     }
 
-    function finishCrag() {
-      if (tempPts.length < 2) return alert("Need at least 2 points.");
-      const name = prompt("Crag name:"); if (!name) return;
-      const vis = L.polyline(tempPts, { color: 'brown', weight: 4 }).addTo(map);
-      const tap = L.polyline(tempPts, { color: 'transparent', weight: 30 }).addTo(map);
-      tap.on('click', () => selectCrag(name));
-      crags.push({ name, pts: tempPts });
-      cragRoutes[name] = cragRoutes[name] || [];
-      cragLayers[name] = { vis, tap };
-      drawingCrag = false; tempPts = []; showFinishButton(false);
+    function finishCrag(){
+      if(tempPts.length<2)return alert("Need ≥2 points.");
+      const name=prompt("Name this crag:"); if(!name)return;
+      const vis=L.polyline(tempPts,{color:'brown',weight:4}).addTo(map);
+      const tap=L.polyline(tempPts,{color:'transparent',weight:30}).addTo(map);
+      tap.on('click',()=>selectCrag(name));
+      crags.push({name,pts:tempPts}); cragRoutes[name]=cragRoutes[name]||[];
+      cragLayers[name]={vis,tap};
+      tempPts=[]; drawingCrag=false; showFinishButton(false);
       selectCrag(name);
     }
 
-    function selectCrag(name) {
-      deselectAll();
-      selectedCrag = name;
-      showContextMenu(name);
-      redrawRoutes();
+    function selectCrag(name){
+      deselectAll(); selectedCrag=name; showContextMenu(name); redrawRoutes();
     }
 
-    function prepareAddRoute() {
-      addRouteMode = true;
-      alert("Tap the map to place a route.");
+    function prepareAddRoute(){
+      addRouteMode=true; alert("Tap map to place a route.");
     }
 
-    function showContextMenu(name) {
-      titleEl.textContent = (selectedRoute ? `📍 ${name}` : `🧗 ${name}`);
-      ctxMenu.style.display = 'block';
-      addRouteBtn.style.display = selectedCrag ? 'inline-block' : 'none';
+    function showContextMenu(name){
+      titleEl.textContent = selectedRoute? `📍 ${name}`:`🧗 ${name}`;
+      ctxMenu.style.display='block';
+      addRouteBtn.style.display = selectedCrag? 'inline-block':'none';
+      trackBtn.style.display = 'inline-block';
     }
 
-    function deselectAll() {
-      selectedCrag = null; selectedRoute = null;
-      ctxMenu.style.display = 'none';
-      addRouteBtn.style.display = 'none';
-      Object.values(routeMarkers).flat().forEach(m => map.removeLayer(m));
+    function deselectAll(){
+      selectedCrag=null; selectedRoute=null;
+      ctxMenu.style.display='none'; addRouteBtn.style.display='none';
+      Object.values(routeMarkers).flat().forEach(m=>m.remove());
     }
 
-    function redrawRoutes() {
-      Object.values(routeMarkers).flat().forEach(m => map.removeLayer(m));
-      routeMarkers[selectedCrag] = [];
-      if (!selectedCrag) return;
-      cragRoutes[selectedCrag].forEach((r, i) => {
-        const icon = L.divIcon({
-          html: `<div style="font-size:20px;font-weight:bold;color:${r.color}">${i+1}</div>`,
-          iconSize: [32, 32], className: ''
-        });
-        const m = L.marker(r.latlng, { draggable: true, icon }).addTo(map);
-        m.on('dragend', e => r.latlng = e.target.getLatLng());
-        m.on('click', () => {
+    function redrawRoutes(){
+      Object.values(routeMarkers).flat().forEach(m=>m.remove());
+      routeMarkers[selectedCrag]=[];
+      if(!selectedCrag) return;
+      cragRoutes[selectedCrag].forEach((r,i)=>{
+        const icon=L.divIcon({ html:`<div style="font-size:20px;font-weight:bold;color:${r.color}">${i+1}</div>`, iconSize:[32,32]});
+        const m=L.marker(r.latlng,{draggable:true,icon}).addTo(map);
+        m.on('dragend',e=>r.latlng = e.target.getLatLng());
+        m.on('click',()=>{
           selectedRoute = r;
           m.bindPopup(`<b>${r.name}</b><br>Grade: ${r.grade}<br>Stars: ${'★'.repeat(r.stars)}<br>${r.comment}`).openPopup();
           showContextMenu(r.name);
@@ -175,96 +168,111 @@
     }
 
     map.on('click', e => {
-      if (drawingCrag) {
+      if(drawingCrag){
         tempPts.push(e.latlng);
-        L.circleMarker(e.latlng, { radius: 6, color: 'blue' }).addTo(map);
-      }
-      else if (addRouteMode && selectedCrag) {
-        const name = prompt("Route name:"); if (!name) return;
-        const grade = prompt("Grade:"); const stars = parseInt(prompt("Stars (1–3):"),10)||0;
-        const comment = prompt("Comment:"); const color = document.getElementById('colorPicker').value;
-        cragRoutes[selectedCrag].push({ name, grade, stars, comment, latlng: e.latlng, color });
-        addRouteMode = false; redrawRoutes();
-      }
-      else {
-        let inCrag = false;
-        crags.forEach(c => {
-          const poly = L.polyline(c.pts);
-          if (poly.getBounds().contains(e.latlng)) inCrag = true;
+        L.circleMarker(e.latlng,{radius:6,color:'blue'}).addTo(map);
+      } else if(addRouteMode && selectedCrag){
+        const name=prompt("Route name:"); if(!name)return;
+        const grade=prompt("Grade:"), stars=parseInt(prompt("Stars (1‑3):"),10)||0;
+        const comment=prompt("Comment:"), color=document.getElementById('colorPicker').value;
+        cragRoutes[selectedCrag].push({name,grade,stars,comment,latlng:e.latlng,color});
+        addRouteMode=false; redrawRoutes();
+      } else {
+        let inAny = false;
+        crags.forEach(c=>{
+          const poly=L.polyline(c.pts);
+          if(poly.getBounds().contains(e.latlng)) inAny=true;
         });
-        if (!inCrag) deselectAll();
+        if(!inAny) deselectAll();
       }
     });
 
-    function editSelected() {
-      if (selectedRoute) {
-        const r = selectedRoute;
-        r.name = prompt("Name:", r.name)||r.name;
-        r.grade = prompt("Grade:", r.grade)||r.grade;
-        r.stars = parseInt(prompt("Stars (1–3):",r.stars),10)||r.stars;
-        r.comment = prompt("Comment:", r.comment)||r.comment;
+    function editSelected(){
+      if(selectedRoute){
+        const r=selectedRoute;
+        r.name=prompt("Name:",r.name)||r.name;
+        r.grade=prompt("Grade:",r.grade)||r.grade;
+        r.stars=parseInt(prompt("Stars (1‑3):",r.stars),10)||r.stars;
+        r.comment=prompt("Comment:",r.comment)||r.comment;
         redrawRoutes();
-      } else if (selectedCrag) {
-        const newName = prompt("Rename crag:", selectedCrag);
-        if (newName && newName !== selectedCrag) {
-          cragRoutes[newName] = cragRoutes[selectedCrag];
+      } else if(selectedCrag){
+        const newName=prompt("Rename crag:",selectedCrag);
+        if(newName && newName!==selectedCrag){
+          cragRoutes[newName]=cragRoutes[selectedCrag];
           delete cragRoutes[selectedCrag];
-          crags = crags.map(c => c.name === selectedCrag ? { ...c, name: newName } : c);
-          cragLayers[newName] = cragLayers[selectedCrag];
-          delete cragLayers[selectedCrag];
-          selectedCrag = newName;
+          crags=crags.map(c=>c.name===selectedCrag?{...c,name:newName}:c);
+          cragLayers[newName]=cragLayers[selectedCrag]; delete cragLayers[selectedCrag];
+          selectedCrag=newName; redrawRoutes();
         }
       }
     }
 
-    function removeSelected() {
-      if (selectedRoute) {
-        if (confirm("Delete this route?")) {
-          cragRoutes[selectedCrag] = cragRoutes[selectedCrag].filter(r => r !== selectedRoute);
-          selectedRoute = null; redrawRoutes();
+    function removeSelected(){
+      if(selectedRoute){
+        if(confirm("Delete this route?")){
+          cragRoutes[selectedCrag]=cragRoutes[selectedCrag].filter(r=>r!==selectedRoute);
+          selectedRoute=null; redrawRoutes();
         }
-      } else if (selectedCrag) {
-        if (confirm("Delete this crag and all its routes?")) {
-          const { vis, tap } = cragLayers[selectedCrag];
-          map.removeLayer(vis);
-          map.removeLayer(tap);
+      } else if(selectedCrag){
+        if(confirm("Delete this crag and all routes?")){
+          const {vis, tap}=cragLayers[selectedCrag];
+          map.removeLayer(vis); map.removeLayer(tap);
           delete cragLayers[selectedCrag];
           delete cragRoutes[selectedCrag];
-          crags = crags.filter(c => c.name !== selectedCrag);
+          crags=crags.filter(c=>c.name!==selectedCrag);
           deselectAll();
         }
       }
     }
 
-    function doImport(event) {
-      const file = event.target.files[0]; if (!file) return;
-      const reader = new FileReader();
-      reader.onload = e => {
-        const data = JSON.parse(e.target.result);
-        crags = data.crags || [];
-        cragRoutes = data.cragRoutes || {};
-        crags.forEach(c => {
-          const vis = L.polyline(c.pts, { color: 'brown', weight: 4 }).addTo(map);
-          const tap = L.polyline(c.pts, { color: 'transparent', weight: 30 }).addTo(map);
-          tap.on('click', () => selectCrag(c.name));
-          cragLayers[c.name] = { vis, tap };
-        });
-        redrawRoutes();
-      };
-      reader.readAsText(file);
+    function toggleTrack(){
+      if(tracking){
+        navigator.geolocation.clearWatch(trackWatchId);
+        trackMarker.remove();
+        tracking=false; trackBtn.textContent="📡 Track Me";
+      } else {
+        if(!("geolocation" in navigator)) return alert("Geolocation unsupported.");
+        trackWatchId = navigator.geolocation.watchPosition(pos=>{
+          const {latitude:lat, longitude:lng} = pos.coords;
+          if(trackMarker) trackMarker.setLatLng([lat,lng]);
+          else trackMarker = L.circleMarker([lat,lng],{radius:8,color:'blue',fillColor:'rgba(0,0,255,0.3)',fillOpacity:0.7}).addTo(map);
+          map.setView([lat,lng]);
+        }, err=>console.warn(err), { enableHighAccuracy:true, maximumAge:2000, timeout:10000 });
+        tracking=true; trackBtn.textContent="⏹️ Stop Track";
+      }
     }
 
-    function load() {
-      const s = localStorage.getItem('climbLog');
-      if (s) {
-        const data = JSON.parse(s);
-        crags = data.crags || [];
-        cragRoutes = data.cragRoutes || {};
-        crags.forEach(c => {
-          const vis = L.polyline(c.pts, { color: 'brown', weight: 4 }).addTo(map);
-          const tap = L.polyline(c.pts, { color: 'transparent', weight: 30 }).addTo(map);
-          tap.on('click', () => selectCrag(c.name));
-          cragLayers[c.name] = { vis, tap };
+    function download(data,fn){
+      const blob=new Blob([data],{type:'application/json'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');a.href=url;a.download=fn;a.click();
+    }
+
+    function doImport(ev){
+      const f=ev.target.files[0]; if(!f)return;
+      const r=new FileReader(); r.onload=e=>{
+        const o=JSON.parse(e.target.result);
+        crags=o.crags||[]; cragRoutes=o.cragRoutes||{};
+        crags.forEach(c=>{
+          const vis=L.polyline(c.pts,{color:'brown',weight:4}).addTo(map);
+          const tap=L.polyline(c.pts,{color:'transparent',weight:30}).addTo(map);
+          tap.on('click',()=>selectCrag(c.name));
+          cragLayers[c.name]={vis,tap};
+        });
+        redrawRoutes();
+      };r.readAsText(f);
+    }
+
+    function load(){
+      const s=localStorage.getItem('climbLog');
+      if(s){
+        const o=JSON.parse(s);
+        crags=o.crags||[]; cragRoutes=o.cragRoutes||{};
+        crags.forEach(c=>{
+          const vis=L.polyline(c.pts,{color:'brown',weight:4}).addTo(map);
+          const tap=L.polyline(c.pts,{color:'transparent',weight:30}).addTo(map);
+          tap.on('click',()=>selectCrag(c.name));
+          cragLayers[c.name]={vis,tap};
         });
         redrawRoutes();
       }
